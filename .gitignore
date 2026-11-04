@@ -1,0 +1,5 @@
+.impeccable/
+.claude/
+__pycache__/
+data/
+*.csv

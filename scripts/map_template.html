@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bangladesh Crime Hotspots</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<style>
+/* Layout: a working map fills the window, a bottle-green instrument panel docks on the left.
+   Single dark look by choice, because the heat ramp reads brightest on a dark map. */
+:root {
+  color-scheme: dark;
+  --ink: #f1f4ee;
+  --ink-2: #b8c4bb;
+  --ink-3: #8a9a90;
+  --panel: #0e1c17;
+  --panel-2: #16291f;
+  --line: #27402f;
+  --marigold: #ffc145;
+  --r1: #f2743b;
+  --r2: #ffd166;
+  --sans: "Hind Siliguri", system-ui, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--panel); color: var(--ink); font: 14px/1.45 var(--sans); display: grid; grid-template-columns: 372px 1fr; }
+#panel { height: 100%; overflow-y: auto; padding: 20px max(18px, env(safe-area-inset-left, 0px)) 24px; display: flex; flex-direction: column; gap: 18px; border-right: 1px solid var(--line); min-width: 0; }
+#panel { scrollbar-color: var(--line) transparent; scrollbar-width: thin; }
+#map { height: 100%; background: #0b0d0c; min-width: 0; }
+
+h1 { font-size: 27px; line-height: 1.1; margin: 0; font-weight: 700; letter-spacing: -.01em; text-wrap: balance; }
+.bn { color: var(--marigold); font-size: 15px; font-weight: 500; margin: 0 0 2px; }
+.lede { color: var(--ink-2); margin: 6px 0 0; }
+
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding-block: 12px; border-block: 1px solid var(--line); }
+.stat b { display: block; font: 500 21px/1.15 var(--mono); }
+.stat span { color: var(--ink-3); font-size: 12px; line-height: 1.25; display: block; margin-top: 3px; }
+
+.group { display: flex; flex-direction: column; gap: 7px; }
+.label { font-size: 11.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); display: flex; justify-content: space-between; align-items: baseline; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip { font: 500 13px/1 var(--sans); color: var(--ink-2); background: transparent; border: 1px solid var(--line); border-radius: 5px; padding: 7px 9px 6px; cursor: pointer; }
+.chip:hover { border-color: var(--ink-3); color: var(--ink); }
+.chip[aria-pressed="true"] { background: var(--marigold); border-color: var(--marigold); color: #1a1405; font-weight: 600; }
+button:focus-visible, select:focus-visible, summary:focus-visible, .row:focus-visible { outline: 2px solid var(--marigold); outline-offset: 2px; }
+.link { background: none; border: 0; padding: 0; color: var(--marigold); font: 500 12px var(--sans); cursor: pointer; text-transform: none; letter-spacing: 0; }
+
+.legend { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.legend label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.legend input { accent-color: var(--marigold); margin: 0; width: 15px; height: 15px; }
+.key { display: flex; gap: 14px; padding-left: 23px; color: var(--ink-3); font-size: 12px; }
+.key > span { display: flex; align-items: center; gap: 5px; }
+.area { flex: none; width: 15px; height: 12px; border-radius: 5px; border: 1.5px solid; }
+.ramp { flex: none; width: 46px; height: 9px; border-radius: 2px; background: linear-gradient(90deg, #3b1f6b, #b5345c, #f2743b, #ffd166); }
+.sizes { flex: none; width: 46px; display: flex; align-items: center; justify-content: space-between; }
+.sizes i { display: block; border-radius: 50%; }
+select { width: 100%; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; font: 13px var(--sans); }
+
+.tabs { display: flex; gap: 16px; border-bottom: 1px solid var(--line); }
+.tab { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--ink-3); font: 600 13.5px var(--sans); padding: 2px 0 6px; cursor: pointer; margin-bottom: -1px; }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--marigold); }
+.list { display: flex; flex-direction: column; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 1px 10px; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); color: inherit; font: inherit; padding: 8px 2px; cursor: pointer; }
+.row:hover { background: var(--panel-2); }
+.row .name { font-weight: 600; min-width: 0; }
+.row .val { font: 500 14px var(--mono); text-align: right; }
+.row .sub { grid-column: 1 / -1; color: var(--ink-3); font-size: 12px; }
+.row .bar { grid-column: 1 / -1; height: 3px; background: var(--line); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.row .bar i { display: block; height: 100%; background: var(--r1); border-radius: 2px; }
+.empty { color: var(--ink-2); padding: 10px 0; font-size: 13px; }
+
+details { color: var(--ink-2); font-size: 13px; border-top: 1px solid var(--line); padding-top: 12px; }
+summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+details p { margin: 8px 0 0; }
+.caveat { font-size: 12.5px; color: var(--ink-2); background: var(--panel-2); border-radius: 5px; padding: 9px 11px; margin: 0; }
+
+.leaflet-container { font-family: var(--sans); }
+.leaflet-popup-content-wrapper, .leaflet-tooltip { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
+.leaflet-popup-tip { background: var(--panel); }
+.leaflet-popup-content { margin: 11px 13px; width: 228px !important; font-size: 13px; line-height: 1.4; }
+.leaflet-container a.leaflet-popup-close-button { color: var(--ink-3); }
+.leaflet-tooltip { font-size: 12.5px; padding: 3px 8px; border: 0; border-radius: 4px; white-space: nowrap; }
+.leaflet-tooltip span { color: var(--ink-3); }
+.leaflet-tooltip-top:before, .leaflet-tooltip-bottom:before, .leaflet-tooltip-left:before, .leaflet-tooltip-right:before { display: none; }
+.leaflet-bar a { background: var(--panel); color: var(--ink); border-color: var(--line) !important; }
+.leaflet-bar a:hover { background: var(--panel-2); }
+.leaflet-control-attribution { background: rgba(14,28,23,.82) !important; color: var(--ink-3); font-size: 10.5px; }
+.leaflet-control-attribution a { color: var(--ink-2); }
+.pop-h { font-weight: 700; font-size: 15px; line-height: 1.2; }
+.pop-s { color: var(--ink-3); font-size: 12px; margin-top: 1px; }
+.mix { display: grid; grid-template-columns: 70px 1fr 30px; gap: 3px 7px; align-items: center; margin-top: 8px; font-size: 12px; color: var(--ink-2); }
+.mix .t { height: 7px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.mix .t i { display: block; height: 100%; background: var(--r1); }
+.mix b { font: 500 12px var(--mono); text-align: right; color: var(--ink); }
+.pop-n { color: var(--ink-3); font-size: 11.5px; margin-top: 8px; }
+
+@media (max-width: 800px) {
+  html, body { height: auto; }
+  body { display: flex; flex-direction: column-reverse; }
+  #map { height: 58vh; position: sticky; top: 0; z-index: 1; }
+  #panel { height: auto; border-right: 0; padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); }
+}
+</style>
+</head>
+<body>
+<aside id="panel">
+  <header>
+    <p class="bn" lang="bn">অপরাধের হটস্পট</p>
+    <h1>Bangladesh Crime Hotspots</h1>
+    <p class="lede" id="lede"></p>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><b id="sN">0</b><span>incidents in view</span></div>
+    <div class="stat"><b id="sH">0</b><span>hotspots</span></div>
+    <div class="stat"><b id="sS">0%</b><span>of incidents inside them</span></div>
+  </div>
+
+  <div class="group">
+    <div class="label">Crime <button class="link" id="reset" type="button">Reset all filters</button></div>
+    <div class="chips" id="fCrime"></div>
+  </div>
+  <div class="group"><div class="label">Time of day</div><div class="chips" id="fPart"></div></div>
+  <div class="group"><div class="label">Season</div><div class="chips" id="fSeason"></div></div>
+
+  <div class="group">
+    <div class="label">Search radius</div>
+    <div class="chips" id="fBand"></div>
+  </div>
+
+  <div class="group">
+    <div class="label">Map layers</div>
+    <div class="legend">
+      <label><input type="checkbox" id="lyrHex" checked><span>Hotspot areas</span></label>
+      <div class="key">
+        <span><span class="area" style="border-color:#ffc145;background:rgba(255,193,69,.18)"></span>Major</span>
+        <span><span class="area" style="border-color:#f2743b;background:rgba(242,116,59,.18)"></span>Regional</span>
+      </div>
+      <label><input type="checkbox" id="lyrHeat" checked><span class="ramp"></span>Incident density</label>
+      <label><input type="checkbox" id="lyrSite" checked><span class="sizes"><i style="width:4px;height:4px;background:#c9527e"></i><i style="width:7px;height:7px;background:#f2743b"></i><i style="width:11px;height:11px;background:#ffd166"></i></span>Incident locations</label>
+    </div>
+    <label class="label" for="base" style="margin-top:6px">Basemap</label>
+    <select id="base">
+      <option value="dark">Dark</option>
+      <option value="fiord">Slate blue</option>
+      <option value="positron">Light grey</option>
+      <option value="liberty">Colour</option>
+    </select>
+  </div>
+
+  <div class="group">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tabH" aria-selected="true" type="button">Hotspots</button>
+      <button class="tab" role="tab" id="tabR" aria-selected="false" type="button">Rate per 100k people</button>
+    </div>
+    <div class="list" id="list"></div>
+  </div>
+
+  <p class="caveat" id="caveat"></p>
+
+  <details>
+    <summary>How the hotspots are found</summary>
+    <p id="method"></p>
+    <p id="fixes"></p>
+  </details>
+</aside>
+<div id="map" role="application" aria-label="Map of crime hotspots in Bangladesh"></div>
+
+<script>
+const D = /*__DATA__*/null;
+const C = D.constants;
+const MIN_TOTAL = 100;   // below this, the normal approximation behind Gi* is too shaky to report
+const fmt = n => n.toLocaleString("en-US");
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const state = {
+  crime: new Set(D.crimes.map((_, i) => i)),
+  part: new Set(D.parts.map((_, i) => i)),
+  season: new Set(D.seasons.map((_, i) => i)),
+  tab: "hot",
+  band: C.bandKm,
+};
+const RADII = [15, 20, 30];
+D.nb = [];
+function setNeighbours(km) {
+  const lim = (km + .01) * (km + .01), cells = D.cells;
+  D.nb = cells.map(a => {
+    const out = [];
+    for (let j = 0; j < cells.length; j++) { const dx = a[2] - cells[j][2], dy = a[3] - cells[j][3]; if (dx * dx + dy * dy <= lim) out.push(j); }
+    return out;
+  });
+}
+setNeighbours(state.band);
+
+/* ---------- map ---------- */
+const map = L.map("map", { preferCanvas: true, zoomControl: false, minZoom: 6, maxZoom: 16, zoomSnap: .25 });
+L.control.zoom({ position: "topright" }).addTo(map);
+const HOME = [[20.6, 88.0], [26.7, 92.7]];
+map.fitBounds(HOME);
+let moved = false;
+map.on("dragstart", () => { moved = true; });
+new ResizeObserver(() => { map.invalidateSize(); if (!moved) map.fitBounds(HOME, { animate: false }); }).observe(document.getElementById("map"));
+
+const OSM = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+const ATTR = OSM + ', <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>, <a href="https://openmaptiles.org" target="_blank" rel="noopener">OpenMapTiles</a>';
+const LIGHT = new Set(["positron", "liberty"]);
+let base;
+function setBase(style) {
+  if (base) map.removeLayer(base);
+  base = L.maplibreGL({ style: "https://tiles.openfreemap.org/styles/" + style, attribution: ATTR }).addTo(map);
+  base.getMaplibreMap().once("load", () => { base.getMaplibreMap().resize(); base._update(); });   // first paint needs the final size and view
+  state.light = LIGHT.has(style);
+}
+setBase("dark");
+
+map.createPane("dataPane").style.zIndex = 450;
+const dataRenderer = L.canvas({ pane: "dataPane", padding: .3 });
+const hexLayer = L.layerGroup().addTo(map);
+const siteLayer = L.layerGroup().addTo(map);
+const heatLayer = L.heatLayer([], {
+  radius: 26, blur: 24, maxZoom: 9, minOpacity: .12, max: 1,
+  gradient: { .2: "#3b1f6b", .5: "#b5345c", .8: "#f2743b", 1: "#ffd166" },
+}).addTo(map);
+
+/* ---------- geometry ---------- */
+function kmToLatLng(x, y) { return [C.refLat + y / C.kmY, C.refLon + x / C.kmX]; }
+function hexLatLngs(cx, cy) {
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 180 * (60 * i - 30);
+    pts.push(kmToLatLng(cx + C.s * Math.cos(a), cy + C.s * Math.sin(a)));
+  }
+  return pts;
+}
+const CORNERS = [[1,-1],[1,1],[0,2],[-1,1],[-1,-1],[0,-2]];   // hex corners in half-width, half-size lattice units
+function smoothRings(cells) {
+  const edges = new Map();
+  for (const i of cells) {
+    const X = 2 * D.cells[i][0] + D.cells[i][1], Y = 3 * D.cells[i][1];
+    CORNERS.forEach((c, k) => {
+      const d = CORNERS[(k + 1) % 6];
+      const a = (X + c[0]) + "," + (Y + c[1]), b = (X + d[0]) + "," + (Y + d[1]);
+      if (edges.has(b)  && edges.get(b).has(a)) edges.get(b).delete(a);      // shared edge: interior, drop it
+      else { if (!edges.has(a)) edges.set(a, new Map()); edges.get(a).set(b, 1); }
+    });
+  }
+  const w = Math.sqrt(3) * C.s, rings = [];
+  const next = new Map();
+  edges.forEach((m, a) => m.forEach((_, b) => next.set(a, b)));
+  while (next.size) {
+    const start = next.keys().next().value, ring = [];
+    let at = start;
+    do {
+      const [X, Y] = at.split(",").map(Number);
+      ring.push([X * w / 2, Y * C.s / 2]);
+      const to = next.get(at); next.delete(at); at = to;
+    } while (at !== start && at !== undefined);
+    let pts = ring;
+    for (let r = 0; r < 3; r++) {                // Chaikin corner cutting rounds off the honeycomb edge
+      const out = [];
+      pts.forEach((p, i) => {
+        const n = pts[(i + 1) % pts.length];
+        out.push([.75 * p[0] + .25 * n[0], .75 * p[1] + .25 * n[1]], [.25 * p[0] + .75 * n[0], .25 * p[1] + .75 * n[1]]);
+      });
+      pts = out;
+    }
+    const area = Math.abs(pts.reduce((s, p, i) => { const n = pts[(i + 1) % pts.length]; return s + p[0] * n[1] - n[0] * p[1]; }, 0));
+    rings.push({ area, pts: pts.map(p => kmToLatLng(p[0], p[1])) });
+  }
+  return rings.sort((a, b) => b.area - a.area).map(r => r.pts);
+}
+const cellIndex = new Map(D.cells.map((c, i) => [c[0] + "," + c[1], i]));
+const HEX_DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
+
+/* ---------- Gi* ---------- */
+function normalSf(z) {                     // Numerical Recipes erfcc, fractional error under 1.2e-7
+  const y = Math.abs(z) / Math.SQRT2, u = 1 / (1 + .5 * y);
+  const e = u * Math.exp(-y * y - 1.26551223 + u * (1.00002368 + u * (.37409196 + u * (.09678418 + u * (-.18628806 +
+    u * (.27886807 + u * (-1.13520398 + u * (1.48851587 + u * (-.82215223 + u * .17087277)))))))));
+  return z >= 0 ? e / 2 : 1 - e / 2;
+}
+function giPass(x, active) {
+  const N = x.length, nb = D.nb;
+  let n = 0, sum = 0, sq = 0;
+  for (let i = 0; i < N; i++) if (active[i]) { n++; sum += x[i]; sq += x[i] * x[i]; }
+  const mean = sum / n, sd = Math.sqrt(Math.max(sq / n - mean * mean, 0));
+  const pv = new Float64Array(N).fill(1), test = [];
+  if (sd > 0) for (let i = 0; i < N; i++) {
+    if (!active[i]) continue;
+    let w = 0, s = 0;
+    for (const j of nb[i]) if (active[j]) { w++; s += x[j]; }
+    if (s > 0) { pv[i] = normalSf((s - mean * w) / (sd * Math.sqrt((n * w - w * w) / (n - 1)))); test.push(i); }
+  }
+  // Benjamini-Hochberg over cells with any incident in range; empty neighbourhoods can never be hot.
+  test.sort((a, b) => pv[a] - pv[b] || a - b);
+  const q = new Float64Array(N).fill(1); let prev = 1;
+  for (let r = test.length; r >= 1; r--) { const i = test[r - 1]; prev = Math.min(prev, pv[i] * test.length / r); q[i] = prev; }
+  return q;
+}
+
+function clusterCells(q) {
+  const seen = new Set(), out = [];
+  for (let i = 0; i < q.length; i++) {
+    if (q[i] >= .05 || seen.has(i)) continue;
+    const stack = [i], cells = []; seen.add(i);
+    while (stack.length) {
+      const c = stack.pop(); cells.push(c);
+      for (const [dq, dr] of HEX_DIRS) {
+        const j = cellIndex.get((D.cells[c][0] + dq) + "," + (D.cells[c][1] + dr));
+        if (j !== undefined && q[j] < .05 && !seen.has(j)) { seen.add(j); stack.push(j); }
+      }
+    }
+    out.push(cells);
+  }
+  return out;
+}
+
+/* ---------- render ---------- */
+function dotRadius(n) {
+  const k = (innerWidth < 800 ? .32 : .42) * Math.min(Math.pow(1.3, map.getZoom() - 7), 3);
+  return Math.max(1.6, k * Math.sqrt(n));
+}
+function dotColor(n) {
+  const ramp = state.light ? ["#8f2d6b", "#c93d2b", "#7a2400"] : ["#c9527e", "#f2743b", "#ffd166"];
+  return n >= 40 ? ramp[2] : n >= 10 ? ramp[1] : ramp[0];
+}
+map.on("zoomend", () => siteLayer.eachLayer(m => m.setRadius(dotRadius(m.options.n))));
+function bump(m, k, v) { m.set(k, (m.get(k) || 0) + v); }
+function ranked(m) { return [...m.entries()].sort((a, b) => b[1] - a[1]); }
+
+function mixHtml(arr, labels) {
+  const max = Math.max(...arr, 1);
+  return '<div class="mix">' + arr.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]).filter(e => e[0] > 0).map(([v, i]) =>
+    `<span>${esc(labels[i])}</span><span class="t"><i style="width:${100 * v / max}%"></i></span><b>${v}</b>`).join("") + "</div>";
+}
+
+let lastResult = null;
+function update() {
+  const rows = D.rows.filter(r => state.crime.has(r[4]) && state.part.has(r[5]) && state.season.has(r[6]));
+  const x = new Int32Array(D.cells.length);
+  const sites = new Map(), units = new Map();
+  let total = 0;
+  for (const r of rows) {
+    const [si, pl, di, un, cr, pa, , n] = r;
+    total += n;
+    x[D.sites[si].cell] += n;
+    let s = sites.get(si);
+    if (!s) sites.set(si, s = { n: 0, crime: new Array(D.crimes.length).fill(0), part: new Array(D.parts.length).fill(0), places: new Map(), dist: new Map() });
+    s.n += n; s.crime[cr] += n; s.part[pa] += n; bump(s.places, pl, n); bump(s.dist, di, n);
+    let u = units.get(un);
+    if (!u) units.set(un, u = { n: 0, sites: new Map() });
+    u.n += n; bump(u.sites, si, n);
+  }
+
+  // National pass, then a regional pass with the national clusters taken out
+  const N = x.length;
+  const keep = cs => cs.filter(c => c.length >= 2 && c.reduce((a, i) => a + x[i], 0) >= C.minCluster);
+  let national = [], regional = [];
+  const qCell = new Float64Array(N).fill(1), tier = new Int8Array(N);
+  if (total >= MIN_TOTAL) {
+    const q1 = giPass(x, new Uint8Array(N).fill(1));
+    national = keep(clusterCells(q1));
+    const active = new Uint8Array(N).fill(1);
+    national.flat().forEach(i => { active[i] = 0; tier[i] = 2; qCell[i] = q1[i]; });
+    const q2 = giPass(x, active);
+    regional = keep(clusterCells(q2));
+    regional.flat().forEach(i => { tier[i] = 1; qCell[i] = q2[i]; });
+  }
+
+  // Heat layer
+  let maxN = 1; sites.forEach(s => { if (s.n > maxN) maxN = s.n; });
+  heatLayer.setLatLngs([...sites.entries()].map(([si, s]) => [D.sites[si].lat, D.sites[si].lon, Math.sqrt(s.n / maxN)]));
+
+  // Sites
+  siteLayer.clearLayers();
+  [...sites.entries()].sort((a, b) => b[1].n - a[1].n).forEach(([si, s]) => {
+    const st = D.sites[si], names = ranked(s.places);
+    const mark = L.circleMarker([st.lat, st.lon], {
+      renderer: dataRenderer, pane: "dataPane", radius: dotRadius(s.n), n: s.n,
+      stroke: true, color: state.light ? "#ffffff" : "#0b0d0c", weight: .6, opacity: .8,
+      fillColor: dotColor(s.n), fillOpacity: .9,
+    });
+    const shown = names.slice(0, 5).map(([p]) => D.places[p]).join(", ") + (names.length > 5 ? ` and ${names.length - 5} more` : "");
+    const title = st.city ? D.districts[ranked(s.dist)[0][0]] + " (city-level point)" : D.places[names[0][0]];
+    mark.bindTooltip(`${esc(title)} · ${fmt(s.n)}`, { direction: "top", offset: [0, -4] });
+    mark.bindPopup(() =>
+      `<div class="pop-h">${esc(title)}</div><div class="pop-s">${esc(D.districts[ranked(s.dist)[0][0]])} district · ${fmt(s.n)} incident${s.n === 1 ? "" : "s"}</div>` +
+      mixHtml(s.crime, D.crimes) + mixHtml(s.part, D.parts) +
+      `<div class="pop-n">${st.city ? "Many neighbourhoods share this one point in the source file, so it shows the city and not an exact spot. " : ""}Places recorded here: ${esc(shown)}.</div>`);
+    siteLayer.addLayer(mark);
+  });
+
+  // Clusters
+  const describe = tierName => cells => {
+    const set = new Set(cells), dist = new Map(); let n = 0, night = 0; const crime = new Array(D.crimes.length).fill(0);
+    sites.forEach((s, si) => {
+      if (!set.has(D.sites[si].cell)) return;
+      n += s.n; night += s.part[D.parts.indexOf("Night")];
+      s.crime.forEach((v, i) => crime[i] += v);
+      s.dist.forEach((v, k) => bump(dist, k, v));
+    });
+    return { cells, n, night, crime, dist: ranked(dist), tier: tierName };
+  };
+  const clusterInfo = [...national.map(describe("Major")).sort((a, b) => b.n - a.n),
+                       ...regional.map(describe("Regional")).sort((a, b) => b.n - a.n)];
+
+  // Hotspot areas: one smooth shape per hotspot, sitting under the location dots
+  hexLayer.clearLayers();
+  clusterInfo.forEach(c => {
+    const major = c.tier === "Major", col = major ? (state.light ? "#c47a00" : "#ffc145") : "#f2743b";
+    const shape = L.polygon(smoothRings(c.cells)[0], {   // outer ring only: small gaps inside a hotspot read as noise
+      renderer: dataRenderer, pane: "dataPane", color: col, weight: 1.5, opacity: .95,
+      fillColor: col, fillOpacity: .08, smoothFactor: .5,
+    });
+    shape.bindTooltip(`${esc(c.dist.slice(0, 2).map(d => D.districts[d[0]]).join(", "))} · ${fmt(c.n)} <span>${c.tier.toLowerCase()} hotspot</span>`, { sticky: true });
+    hexLayer.addLayer(shape);
+  });
+  hexToBack();
+
+  const inside = clusterInfo.reduce((a, c) => a + c.n, 0);
+  const hotCells = clusterInfo.reduce((a, c) => a + c.cells.length, 0);
+  document.getElementById("sN").textContent = fmt(total);
+  document.getElementById("sH").textContent = clusterInfo.length;
+  document.getElementById("sS").textContent = total ? Math.round(100 * inside / total) + "%" : "0%";
+  document.getElementById("lede").textContent = total && hotCells
+    ? `${Math.round(100 * inside / total)}% of the incidents in view fall in ${(100 * hotCells / D.cells.length).toFixed(0)}% of the mapped area.`
+    : "No statistically significant clusters for this selection.";
+
+  lastResult = { total, clusterInfo, units, tier };
+  renderList();
+}
+
+function flyCells(cells) {
+  const pts = cells.flatMap(i => hexLatLngs(D.cells[i][2], D.cells[i][3]));
+  map.flyToBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 11, duration: .8 });
+}
+
+function renderList() {
+  const el = document.getElementById("list"), { total, clusterInfo, units } = lastResult;
+  el.innerHTML = "";
+  if (state.tab === "hot") {
+    if (!clusterInfo.length) {
+      el.innerHTML = `<p class="empty">${total < MIN_TOTAL ? `${fmt(total)} incidents is too few to test for clusters (the minimum is ${MIN_TOTAL}).` : `These ${fmt(total)} incidents don't form a cluster that beats chance.`} Turn on more filters to see one.</p>`;
+      return;
+    }
+    const max = Math.max(...clusterInfo.map(c => c.n));
+    clusterInfo.slice(0, 12).forEach(c => {
+      const b = document.createElement("button"); b.className = "row"; b.type = "button";
+      const name = c.dist.slice(0, 3).map(d => D.districts[d[0]]).join(" · ");
+      const ci = c.crime.indexOf(Math.max(...c.crime));
+      b.innerHTML = `<span class="name">${esc(name)}</span><span class="val">${fmt(c.n)}</span>` +
+        `<span class="sub">${c.tier} · ${c.n / total < .01 ? "under 1" : Math.round(100 * c.n / total)}% of view · most often ${esc(D.crimes[ci].toLowerCase())} · ${Math.round(100 * c.night / c.n)}% at night</span>` +
+        `<span class="bar"><i style="width:${100 * c.n / max}%"></i></span>`;
+      b.onclick = () => flyCells(c.cells);
+      el.appendChild(b);
+    });
+  } else {
+    const list = [...units.entries()].map(([id, u]) => ({ id, ...u, rate: 1e5 * u.n / D.units[id].pop, ...D.units[id] }))
+      .filter(u => u.n >= 15).sort((a, b) => b.rate - a.rate);
+    if (!list.length) { el.innerHTML = '<p class="empty">No upazila or metro area has 15 incidents under these filters, so rates would be mostly noise. Turn on more filters to see them.</p>'; return; }
+    const max = list[0].rate;
+    list.slice(0, 10).forEach(u => {
+      const b = document.createElement("button"); b.className = "row"; b.type = "button";
+      b.innerHTML = `<span class="name">${esc(u.label)}</span><span class="val">${u.rate.toFixed(1)}</span>` +
+        `<span class="sub">${esc(u.district)} district · ${fmt(u.n)} incidents · ${fmt(u.pop)} people</span>` +
+        `<span class="bar"><i style="width:${100 * u.rate / max}%"></i></span>`;
+      b.onclick = () => { const s = D.sites[ranked(u.sites)[0][0]]; map.flyTo([s.lat, s.lon], 11, { duration: .8 }); };
+      el.appendChild(b);
+    });
+  }
+}
+
+/* ---------- controls ---------- */
+function chips(id, labels, set) {
+  const box = document.getElementById(id);
+  labels.forEach((l, i) => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.type = "button"; b.textContent = l; b.setAttribute("aria-pressed", "true");
+    b.onclick = () => {
+      if (set.has(i) && set.size === 1) return;   // keep at least one option on
+      set.has(i) ? set.delete(i) : set.add(i);
+      b.setAttribute("aria-pressed", set.has(i));
+      update();
+    };
+    box.appendChild(b);
+  });
+}
+chips("fCrime", D.crimes, state.crime);
+chips("fPart", D.parts, state.part);
+chips("fSeason", D.seasons, state.season);
+function bandChips() {
+  const box = document.getElementById("fBand");
+  box.innerHTML = "";
+  RADII.forEach(km => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.type = "button"; b.textContent = km + " km"; b.setAttribute("aria-pressed", km === state.band);
+    b.onclick = () => { state.band = km; setNeighbours(km); bandChips(); update(); };
+    box.appendChild(b);
+  });
+}
+bandChips();
+
+document.getElementById("reset").onclick = () => {
+  [[state.crime, D.crimes], [state.part, D.parts], [state.season, D.seasons]].forEach(([s, l]) => l.forEach((_, i) => s.add(i)));
+  document.querySelectorAll("#fCrime .chip, #fPart .chip, #fSeason .chip").forEach(b => b.setAttribute("aria-pressed", "true"));
+  if (state.band !== C.bandKm) { state.band = C.bandKm; setNeighbours(state.band); bandChips(); }
+  map.flyToBounds(HOME, { duration: .8 });
+  update();
+};
+const hexToBack = () => hexLayer.eachLayer(l => l.bringToBack());
+const toggle = (id, layer) => document.getElementById(id).onchange = e => { e.target.checked ? layer.addTo(map) : map.removeLayer(layer); hexToBack(); };
+toggle("lyrHex", hexLayer); toggle("lyrHeat", heatLayer); toggle("lyrSite", siteLayer);
+document.getElementById("base").onchange = e => { setBase(e.target.value); update(); };
+function setTab(t) {
+  state.tab = t;
+  document.getElementById("tabH").setAttribute("aria-selected", t === "hot");
+  document.getElementById("tabR").setAttribute("aria-selected", t === "rate");
+  renderList();
+}
+document.getElementById("tabH").onclick = () => setTab("hot");
+document.getElementById("tabR").onclick = () => setTab("rate");
+
+const M = D.meta;
+document.getElementById("caveat").textContent =
+  `These are reported incidents, placed at the centre of a named place, with no year in the file. Hotspots show where reports concentrate, which partly tracks population and press coverage. Use the rate tab to compare places by size. ${fmt(M.cityLevel)} incidents (${Math.round(100 * M.cityLevel / M.incidents)}%) have only a city-level location, so don't read street-level detail inside Dhaka or Chattogram.`;
+document.getElementById("method").textContent =
+  `Incidents are counted in ${C.hexKm} km hexagons. For each one, the Getis-Ord Gi* statistic compares the total within the search radius with what the national average predicts, corrected for testing many cells at once (Benjamini-Hochberg false discovery rate at 5%). Neighbouring hot cells are joined into one area and its outline smoothed, so the edges are approximate. Major hotspots come from that first pass. The regional pass then removes them and repeats the test, so that cities outside the two giants can stand out. Crime counts are very uneven, so treat the significance as approximate. The test re-runs when you change a filter. Greater Dhaka and Chattogram stay hot at every radius. Regional hotspots change with the radius, so treat them as leads to check.`;
+document.getElementById("fixes").textContent =
+  `Data cleaning: ${fmt(M.dupes)} exact duplicate rows were removed from ${fmt(M.rawRows)}, leaving ${fmt(M.incidents)} incidents. ${fmt(M.moved)} rows were moved because their coordinates were wrong, such as 12 Chattogram upazilas stacked on one city point and Dhaka University placed in Savar.`;
+
+update();
+window.__hotspot = () => lastResult;
+</script>
+</body>
+</html>

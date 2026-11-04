@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Where Crime Reports Cluster</title>
+<meta name="description" content="A scrolling data story on where Bangladesh's reported crime concentrates, and what the numbers can and can't show.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+/* Layout: one map fixed behind the whole story. Dark map chapters let it show through;
+   paper chapters slide over it for the charts, like turning a page. Single look by choice. */
+:root {
+  color-scheme: dark;
+  --night: #0b0d0c;
+  --card: rgba(13, 17, 15, .92);
+  --ink-d: #f2f3ee;
+  --ink-d2: #bcc3bb;
+  --line-d: #2c3430;
+  --paper: #f3f3ee;
+  --ink: #15191a;
+  --ink-2: #555b57;
+  --ink-3: #7b817c;
+  --rule: #d4d5cc;
+  --gold: #ffc145;
+  --ember: #f2743b;
+  --wine: #a32a55;
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --sans: "Hind Siliguri", system-ui, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --gutter-l: max(16px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--night); color: var(--ink-d); font: 19px/1.6 var(--serif); overflow-x: hidden; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+#stage { position: fixed; inset: 0; z-index: 0; background: var(--night); }
+#map { position: absolute; inset: 0; }
+#mapError { position: absolute; right: 24px; bottom: 24px; font: 14px var(--sans); color: var(--ink-d2); max-width: 300px; }
+main { position: relative; z-index: 1; }
+
+/* Map chapters */
+.chapter { pointer-events: none; padding-left: max(5vw, var(--gutter-l)); padding-right: var(--gutter-r); }
+.step { min-height: 105vh; display: flex; align-items: center; }
+.card { pointer-events: auto; width: min(430px, 100%); background: var(--card); padding: 22px 24px 20px; border-radius: 3px; }
+.card p { margin: 0; }
+.card p + p { margin-top: 12px; }
+.eyebrow { font: 600 12.5px/1.3 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--gold); margin: 0 0 8px; }
+h2 { font: 500 clamp(30px, 4vw, 44px)/1.08 var(--serif); letter-spacing: -.012em; margin: 0 0 12px; text-wrap: balance; }
+.card h2 { font-size: clamp(27px, 3vw, 33px); }
+.note { font: 13.5px/1.45 var(--sans); }
+.card .note { color: var(--ink-d2); }
+
+/* Opening */
+.hero { min-height: 100vh; display: flex; align-items: center; padding-block: 8vh; }
+.hero-in { pointer-events: auto; width: min(560px, 100%); background: linear-gradient(90deg, rgba(11,13,12,.9) 70%, rgba(11,13,12,0)); padding: 16px 60px 16px 24px; }
+.bn { font: 500 17px var(--sans); color: var(--gold); margin: 0 0 6px; }
+h1 { font: 500 clamp(44px, 6.4vw, 76px)/1 var(--serif); letter-spacing: -.02em; margin: 0 0 18px; text-wrap: balance; }
+.deck { font-size: 22px; line-height: 1.4; color: var(--ink-d); margin: 0 0 14px; }
+.byline { font: 14px/1.4 var(--sans); color: var(--ink-d2); margin: 0; }
+.byline a { color: var(--gold); }
+
+/* Paper chapters */
+.page { background: var(--paper); color: var(--ink); padding-block: 72px; padding-left: var(--gutter-l); padding-right: var(--gutter-r); }
+.page + .page { border-top: 1px solid var(--rule); }
+.wrap { max-width: 1020px; margin-inline: auto; }
+.lead { max-width: 640px; }
+.lead p { margin: 0 0 14px; }
+.page .eyebrow { color: var(--wine); }
+.fig { margin: 30px 0 0; min-width: 0; }
+.fig-t { font: 600 16px/1.3 var(--sans); margin: 0 0 3px; }
+.fig-s { font: 14px/1.4 var(--sans); color: var(--ink-2); margin: 0 0 16px; }
+.fig-n { font: 13px/1.45 var(--sans); color: var(--ink-2); margin: 14px 0 0; max-width: 640px; }
+.two { display: grid; grid-template-columns: 2fr 1fr; gap: 44px; align-items: start; }
+.two > * { min-width: 0; }
+
+/* Mix bar */
+.mix { display: flex; gap: 2px; font-family: var(--sans); }
+.mix > div { flex: 0 0 auto; width: calc(var(--w) * 1% - 2px); min-width: 0; }
+.mix i { display: block; height: 46px; background: var(--c); }
+.mix > div:first-child i { border-radius: 4px 0 0 4px; }
+.mix > div:last-child i { border-radius: 0 4px 4px 0; }
+.mix b { display: block; font: 500 21px/1.1 var(--mono); margin-top: 9px; }
+.mix span { display: block; font-size: 14px; line-height: 1.25; color: var(--ink-2); margin-top: 3px; }
+
+/* Ranked bars */
+.bars { display: grid; grid-template-columns: max-content 1fr; gap: 9px 12px; align-items: center; font: 14.5px/1.2 var(--sans); position: relative; }
+.bars .t { position: relative; height: 20px; }
+.bars .t i { display: block; height: 100%; background: var(--c, var(--wine)); border-radius: 0 3px 3px 0; min-width: 2px; }
+.bars .t b { position: absolute; top: 50%; transform: translate(6px, -50%); left: var(--w); font: 500 13.5px var(--mono); white-space: nowrap; }
+.bars .t .sub { font: 12.5px var(--sans); color: var(--ink-2); }
+.bars .avg { position: absolute; top: -5px; bottom: -5px; width: 0; border-left: 1.5px dashed var(--ink); left: var(--w); }
+.bars .ref { color: var(--ink-2); }
+
+/* Stability table inside a map card */
+.stab { width: 100%; border-collapse: collapse; font: 13.5px/1.25 var(--sans); margin-top: 12px; }
+.stab th { font-weight: 500; color: var(--ink-d2); text-align: right; padding: 0 0 5px 8px; font-size: 12.5px; }
+.stab th:first-child, .stab td:first-child { text-align: left; padding-left: 0; }
+.stab td { padding: 3.5px 0 3.5px 8px; border-top: 1px solid var(--line-d); text-align: right; font-family: var(--mono); font-size: 13px; }
+.stab td:first-child { font-family: var(--sans); font-size: 13.5px; }
+.stab .off { color: #626b65; }
+.stab tr.major td:first-child { color: var(--gold); }
+
+/* One map per crime */
+.dotmaps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 30px 26px; }
+.dotmap { min-width: 0; font-family: var(--sans); }
+.dotmap h3 { font: 500 25px/1.1 var(--serif); margin: 0; }
+.dotmap .cnt { font: 13px var(--mono); color: var(--ink-2); margin: 2px 0 6px; }
+.dotmap svg { display: block; width: 100%; height: auto; }
+.dotmap p { font: 14px/1.4 var(--sans); margin: 6px 0 0; }
+.k-solid, .k-dash { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--ink); vertical-align: middle; margin: 0 2px 0 6px; }
+.k-dash { border-top-style: dashed; }
+
+/* Division fingerprint */
+.finger { display: grid; grid-template-columns: minmax(84px, 130px) repeat(6, minmax(0, 1fr)); gap: 3px; font: 14px/1.2 var(--sans); max-width: 860px; }
+.finger .h { color: var(--ink-2); font-size: 13px; padding-bottom: 5px; text-align: center; min-width: 0; }
+.finger .r { display: flex; align-items: center; font-weight: 500; min-width: 0; }
+.finger .c { height: 46px; display: flex; align-items: center; justify-content: center; font: 500 15px var(--mono); border-radius: 2px; background: #e6e6df; color: #7b817c; }
+
+/* Clock grid */
+.clock { display: grid; grid-template-columns: minmax(82px, 130px) repeat(5, minmax(0, 1fr)); gap: 3px; font: 14px/1.2 var(--sans); max-width: 780px; }
+.clock .h { color: var(--ink-2); font-size: 13px; padding-bottom: 5px; text-align: center; }
+.clock .r { display: flex; align-items: center; font-weight: 500; }
+.clock .c { height: 52px; display: flex; align-items: center; justify-content: center; font: 500 16px var(--mono); border-radius: 2px; }
+.short { display: none; }
+
+/* Scatter, months */
+.tipable { position: relative; }
+#tip { position: fixed; z-index: 5; pointer-events: none; background: #15191a; color: #f2f3ee; font: 13px/1.35 var(--sans); padding: 8px 12px; border-radius: 3px; max-width: 240px; }
+svg text { font-family: var(--sans); }
+.scatter { width: 100%; height: auto; display: block; }
+.months { display: flex; align-items: flex-end; gap: 4px; height: 210px; font-family: var(--sans); }
+.months > div { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+.months i { display: block; width: 100%; background: #b9bab0; border-radius: 3px 3px 0 0; }
+.months .hi i { background: var(--wine); }
+.months b { font: 500 13px var(--mono); margin-bottom: 4px; }
+.months span { font-size: 13px; color: var(--ink-2); margin-top: 5px; }
+.week.bars { gap: 6px 10px; font-size: 13.5px; }
+.week .t { height: 15px; }
+
+/* Explore */
+.explore { height: min(84vh, 780px); border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; position: relative; margin-top: 26px; background: #0e1c17; }
+.explore iframe { width: 100%; height: 100%; border: 0; display: block; }
+.btn { display: inline-block; font: 600 15px var(--sans); background: var(--ink); color: var(--paper); text-decoration: none; padding: 11px 18px 10px; border-radius: 3px; border: 0; cursor: pointer; }
+.btn:hover { background: var(--wine); }
+.explore-cover .btn { background: var(--gold); color: #1a1405; }
+.explore-cover:hover .btn { background: #ffd166; }
+.explore-cover { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(11,13,12,.35); cursor: pointer; border: 0; width: 100%; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* From row to dot */
+.flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 26px 0 0; padding: 0; list-style: none; font-family: var(--sans); }
+.flow li { padding: 0 14px 0 0; border-top: 3px solid var(--ink); padding-top: 10px; position: relative; }
+.flow li + li { margin-left: 0; }
+.flow b { display: block; font: 500 24px/1.1 var(--mono); }
+.flow span { display: block; font-size: 14px; font-weight: 500; margin-top: 4px; }
+.flow small { display: block; font-size: 13px; line-height: 1.35; color: var(--ink-2); margin-top: 4px; }
+.limits { columns: 2; column-gap: 40px; margin: 26px 0 0; padding: 0; list-style: none; font-size: 17px; line-height: 1.5; }
+.limits li { break-inside: avoid; margin-bottom: 14px; }
+.limits b { font-family: var(--sans); font-size: 15px; display: block; }
+footer { font: 13px/1.5 var(--sans); color: var(--ink-2); margin-top: 34px; padding-top: 14px; border-top: 1px solid var(--rule); }
+footer a { color: var(--ink); }
+
+/* Map labels */
+.mlabel { font: 500 13px/1.2 var(--sans); color: #fff; text-shadow: 0 0 4px #000, 0 0 2px #000, 0 1px 2px #000; white-space: nowrap; pointer-events: none; }
+.mlabel b { font: 500 12px var(--mono); color: var(--gold); margin-left: 4px; }
+.maplibregl-ctrl-attrib, .maplibregl-ctrl-attrib.maplibregl-compact { font: 11px var(--sans); background: rgba(13,17,15,.8) !important; color: var(--ink-d2); }
+.maplibregl-ctrl-attrib a { color: var(--ink-d2) !important; }
+
+@media (max-width: 800px) {
+  body { font-size: 18px; }
+  .chapter { padding-left: var(--gutter-l); }
+  .step { align-items: flex-end; padding-bottom: 6vh; }
+  .card { width: 100%; padding: 16px 18px 15px; }
+  .hero { align-items: flex-start; padding-top: 5vh; min-height: 100vh; }
+  .hero-in { padding: 14px 16px; background: var(--card); width: 100%; }
+  .deck { font-size: 20px; }
+  .page { padding-block: 52px; }
+  .two { grid-template-columns: 1fr; gap: 28px; }
+  .mix { flex-direction: column; gap: 10px; }
+  .mix > div { width: 100%; display: grid; grid-template-columns: 62px 1fr; gap: 0 10px; align-items: center; }
+  .mix i { grid-column: 1 / -1; height: 20px; width: calc(var(--w) * 2.6%); border-radius: 0 3px 3px 0 !important; margin-bottom: 4px; }
+  .mix b { margin: 0; font-size: 16px; }
+  .mix span { margin: 0; }
+  .clock .c { height: 44px; font-size: 14px; }
+  .dotmaps { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 14px; }
+  .dotmap h3 { font-size: 21px; }
+  .dotmap p { font-size: 13px; }
+  .dotmap .lbl { display: none; }
+  .finger { grid-template-columns: 74px repeat(6, minmax(0, 1fr)); gap: 2px; font-size: 12.5px; }
+  .finger .h { font-size: 10.5px; }
+  .finger .c { font-size: 12px; height: 40px; }
+  .full { display: none; } .short { display: inline; }
+  .months { height: 170px; gap: 2px; }
+  .months b { font-size: 10.5px; }
+  .months span { font-size: 11px; }
+  .flow { grid-template-columns: 1fr; gap: 12px; }
+  .limits { columns: 1; }
+  .explore-wide { display: none; }
+}
+@media (min-width: 801px) { .explore-narrow { display: none; } }
+</style>
+</head>
+<body>
+<div id="stage"><div id="map" role="img" aria-label="Map of Bangladesh showing reported crime locations, which changes as the story scrolls"></div></div>
+<div id="tip" hidden></div>
+
+<main>
+  <section class="chapter">
+    <div class="hero step" data-scene="country">
+      <div class="hero-in">
+        <p class="bn" lang="bn">অপরাধের মানচিত্র</p>
+        <h1>Where Bangladesh's crime reports cluster</h1>
+        <p class="deck">{{n}} reported incidents. Each dot is a place named in the records.</p>
+        <p class="byline">An interactive data story · <a href="#about">About the data</a></p>
+      </div>
+    </div>
+    <div class="step" data-scene="countryHot">
+      <div class="card">
+        <p class="eyebrow">The pattern</p>
+        <h2>One-third of the reports, 3% of the map</h2>
+        <p>Statistical testing finds {{hot}} hotspots. Together they hold {{inside_pct}}% of the incidents in about {{area_pct}}% of the mapped area.</p>
+        <p>These are reports, so they show where crime gets recorded. That may not be the same as where it happens most.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="wrap">
+      <div class="lead">
+        <p class="eyebrow">What's being reported</p>
+        <h2>Almost half involve a death</h2>
+        <p>Bodies found ({{top_mix_pct}}%) and murders ({{mix2_pct}}%) make up the two largest groups in the records. The two can overlap in real life: a body found today may later become a murder case.</p>
+      </div>
+      <figure class="fig">
+        <p class="fig-t">Share of reported incidents by crime type</p>
+        <p class="fig-s">{{n}} incidents</p>
+        <div class="mix" id="mixChart"></div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="chapter">
+    <div class="step" data-scene="dhaka">
+      <div class="card">
+        <p class="eyebrow">Greater Dhaka</p>
+        <h2>{{dhaka_n}} incidents in one connected area</h2>
+        <p>The largest hotspot takes in Dhaka, Narayanganj and Gazipur. It holds {{dhaka_pct}}% of all the incidents in the file.</p>
+      </div>
+    </div>
+    <div class="step" data-scene="dhakaCity">
+      <div class="card">
+        <p class="eyebrow">Inside the capital</p>
+        <h2>Savar stands out on the edge of the city</h2>
+        <p>Savar alone has {{savar_n}} incidents, more than any named Dhaka neighbourhood.</p>
+        <p class="note">Don't read street-level detail here. Dots mark the centre of a named place, and {{city_n}} incidents nationwide have only a city-level location. Savar is a whole upazila, while Dhaka is split into many small neighbourhoods, which also makes Savar look larger.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="chapter">
+    <div class="step" data-scene="ctg">
+      <div class="card">
+        <p class="eyebrow">Chattogram</p>
+        <h2>The only other hotspot that never moves</h2>
+        <p>{{ctg_n}} incidents fall in this area, {{ctg_city_n}} of them recorded simply as Chattogram city. Like Greater Dhaka, it stays significant at every search radius we tested.</p>
+      </div>
+    </div>
+    <div class="step" data-scene="regions">
+      <div class="card">
+        <p class="eyebrow">The regions</p>
+        <h2>Smaller signals, less certain</h2>
+        <p>With the two giants set aside, Jashore ({{jashore_n}}) and Mymensingh ({{mym_n}}) appear at the 20 km radius.</p>
+      </div>
+    </div>
+    <div class="step" data-scene="regionsTable">
+      <div class="card">
+        <p class="eyebrow">How stable is it?</p>
+        <h2>Change the radius and the list changes</h2>
+        <table class="stab" id="stabTable"></table>
+        <p class="note" style="margin-top:10px">Incidents inside each hotspot, by search radius. A dash means no hotspot there. Treat regional results as leads to check.</p>
+      </div>
+    </div>
+    <div class="step" data-scene="rates">
+      <div class="card">
+        <p class="eyebrow">Size changes the picture</p>
+        <h2>Per person, the map looks different</h2>
+        <p>Big cities have more reports partly because they have more people. Per 100,000 residents, {{top_rate_name}} ({{top_rate}}) is far above Dhaka metro ({{dhaka_rate}}) and Chattogram metro ({{ctg_rate}}).</p>
+        <p class="note">Dots now show the rate for each area with at least 15 incidents. Larger and brighter means a higher rate.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="wrap">
+      <div class="lead">
+        <p class="eyebrow">The rankings</p>
+        <h2>Regional centres top the list</h2>
+        <p>Rates rise and fall easily in places with few residents, so a handful of cases can move an area up this list. Treat the order as approximate.</p>
+      </div>
+      <figure class="fig">
+        <p class="fig-t">Reported incidents per 100,000 residents</p>
+        <p class="fig-s">Highest seven areas with at least 15 incidents, and the two metro areas for comparison</p>
+        <div class="bars" id="rateBars"></div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="wrap">
+      <div class="lead">
+        <p class="eyebrow">Density</p>
+        <h2>Crowded doesn't mean riskier</h2>
+        <p>Across {{units}} areas, population density tells you almost nothing about the rate of reported incidents. The correlation is {{rho}}, very close to zero.</p>
+      </div>
+      <figure class="fig tipable">
+        <p class="fig-t">Population density and incident rate, by area</p>
+        <p class="fig-s">Each dot is one area. Both scales are logarithmic: each gridline is ten times the last. Hover or tap for names.</p>
+        <div id="scatter"></div>
+        <p class="fig-n">Only areas with at least one reported incident appear, so this can't show that density has no effect at all.</p>
+      </figure>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="wrap">
+      <div class="lead">
+        <p class="eyebrow">Crime by crime</p>
+        <h2>Not every crime is a Dhaka crime</h2>
+        <p>Dhaka district holds {{dhaka_all}}% of all incidents, but that share changes a lot by crime. Nearly one robbery in three is reported there, compared with about one murder in nine.</p>
+      </div>
+      <figure class="fig">
+        <p class="fig-t">Dhaka district's share of each crime</p>
+        <p class="fig-s">Dashed line: its {{dhaka_all}}% share of all crime</p>
+        <div class="bars" id="dhakaBars"></div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="wrap">
+      <div class="lead">
+        <p class="eyebrow">Six crimes, six maps</p>
+        <h2>Robbery crowds into the capital. Murder spreads out.</h2>
+        <p>Greater Dhaka holds {{rob_pct}}% of robberies but only {{mur_pct}}% of murders. Mapping each crime on its own shows patterns that the combined map hides.</p>
+      </div>
+      <figure class="fig tipable">
+        <p class="fig-t">Reported incidents by crime, most concentrated in Greater Dhaka first</p>
+        <p class="fig-s">Larger dots mean more incidents. <span class="k-solid"></span> major hotspot <span class="k-dash"></span> regional hotspot. Grey dots show every recorded location.</p>
+        <div class="dotmaps" id="dotmaps"></div>
+        <p class="fig-n">Counts, not rates, tested at the 20 km radius. Regional hotspots change with the radius, so treat them as leads to check. Kidnap and robbery have the fewest cases, so their maps are the least certain.</p>
+      </figure>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="wrap">
+      <div class="lead">
+        <p class="eyebrow">Regional fingerprints</p>
+        <h2>Each division reports a different mix of crime</h2>
+        <p>This chart ignores how many incidents a division has and asks what kind they are. In Mymensingh, murder's share of reports is {{mym_mur}} times the national share. In Dhaka, robbery's share is {{dh_rob_r}} times, and in Barisal, assault's is {{bar_ass}} times.</p>
+        <p>Some crimes are rarer than expected too: bodies found in Sylhet ({{syl_body}} times) and murder in Rangpur ({{ran_mur}} times).</p>
+      </div>
+      <figure class="fig">
+        <p class="fig-t">Share of each crime compared with the national mix</p>
+        <p class="fig-s">1.0× matches the national share. Only differences unlikely to be chance are coloured.</p>
+        <div class="finger" id="finger"></div>
+        <p class="fig-n">Colour marks cells that pass a strict test across all 48 comparisons (Bonferroni, 5%). The overall differences are modest (Cramér's V {{cramer}}), and they can reflect what local reporting tends to cover as well as what happens.</p>
+      </figure>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="wrap">
+      <div class="lead">
+        <p class="eyebrow">The clock</p>
+        <h2>Night is when most violence is reported</h2>
+        <p>{{night_pct}}% of all incidents are recorded at night, and about two-thirds of murders, robberies and rapes.</p>
+        <p>Bodies found follow a different clock, with {{body_morning}}% recorded in the morning. That's probably when they're discovered, not when the deaths happened.</p>
+      </div>
+      <figure class="fig">
+        <p class="fig-t">When each crime is recorded</p>
+        <p class="fig-s">Percent of each crime by time of day. Each row adds up to about 100%.</p>
+        <div class="clock" id="clock"></div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="wrap">
+      <div class="lead">
+        <p class="eyebrow">The calendar</p>
+        <h2>An unexplained dip at the end of the year</h2>
+        <p>November and December average {{late_avg}} incidents, about {{late_drop}}% below the {{other_avg}} average of other months. This might be a real seasonal drop, or the records for those months might be incomplete. The file has no year, so we can't tell which.</p>
+      </div>
+      <div class="two">
+        <figure class="fig tipable">
+          <p class="fig-t">Reported incidents by month</p>
+          <p class="fig-s">All years in the file combined</p>
+          <div class="months" id="months"></div>
+        </figure>
+        <figure class="fig">
+          <p class="fig-t">By day of the week</p>
+          <p class="fig-s">{{wk_hi}} is highest, {{wk_lo}} lowest: a small gap</p>
+          <div class="bars week" id="week"></div>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="explore">
+    <div class="wrap">
+      <div class="lead">
+        <p class="eyebrow">Your area</p>
+        <h2>Explore the map yourself</h2>
+        <p>Filter by crime, time of day and season, change the search radius, and click any place for its numbers.</p>
+      </div>
+      <div class="explore explore-wide" id="exploreBox">
+        <button class="explore-cover" id="exploreCover" type="button"><span class="btn">Open the interactive map</span></button>
+      </div>
+      <p class="explore-narrow" style="margin-top:20px"><a class="btn" href="map.html">Open the interactive map</a></p>
+    </div>
+  </section>
+
+  <section class="page" id="about">
+    <div class="wrap">
+      <div class="lead">
+        <p class="eyebrow">About the data</p>
+        <h2>How a row became a dot</h2>
+        <p>The source is a single file, Bangladesh-Crime-Dataset.csv. It doesn't state its source or the years it covers.</p>
+      </div>
+      <ol class="flow">
+        <li><b>{{raw}}</b><span>rows in the file</span><small>Each lists a crime, place, time of day and local statistics</small></li>
+        <li><b>{{n}}</b><span>incidents kept</span><small>{{dupes}} exact duplicates removed; some could be separate victims</small></li>
+        <li><b>{{moved}}</b><span>rows moved</span><small>Their coordinates were wrong, such as upazilas stacked on one city point. New positions are approximate</small></li>
+        <li><b>{{sites}}</b><span>locations</span><small>Each is the centre of a named place, not an exact address</small></li>
+        <li><b>{{hot}}</b><span>hotspots</span><small>Getis-Ord Gi* on {{cells}} grid cells of 10 km, 20 km radius, 5% false discovery rate</small></li>
+      </ol>
+      <ul class="limits">
+        <li><b>No trends</b>Without years, the story can't say whether crime is rising or falling.</li>
+        <li><b>Reports, not all crime</b>Places with more reporting or press coverage can look worse, and many crimes are never reported.</li>
+        <li><b>Population figures</b>Rates use the population column in the file, and its census year isn't stated.</li>
+        <li><b>Approximate edges</b>Hotspot outlines are smoothed for reading, and crime counts are too uneven for exact confidence levels.</li>
+        <li><b>What we left out</b>Weather and literacy are in the file. Without figures for days with no incident, or a clear link, charts of them would mislead.</li>
+        <li><b>Totals only</b>This story shows counts for places. It identifies no victims or individual cases.</li>
+      </ul>
+      <footer>Basemap © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://openfreemap.org">OpenFreeMap</a>, <a href="https://openmaptiles.org">OpenMapTiles</a>.</footer>
+    </div>
+  </section>
+</main>
+
+<script>
+const D = /*__DATA__*/null;
+const REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const fmt = n => n.toLocaleString("en-US");
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const $ = id => document.getElementById(id);
+
+/* ---------- charts ---------- */
+const TONES = ["#a32a55", "#c4476a", "#d9642f", "#e88b3a", "#d9a441", "#b9bab0"];
+$("mixChart").innerHTML = D.mix.map((m, i) =>
+  `<div style="--w:${m.pct};--c:${TONES[i]}"><i></i><b>${Math.round(m.pct)}%</b><span>${esc(m.name)}</span></div>`).join("");
+
+(function dhakaBars() {
+  const max = D.dhakaShare[0].pct * 1.15;
+  const row = (l, inner) => `<div>${esc(l)}</div><div class="t">${inner}</div>`;
+  $("dhakaBars").innerHTML = D.dhakaShare.map((d, i) => {
+    const w = 100 * d.pct / max;
+    return row(d.name, `<i style="width:${w}%"></i><b style="--w:${w}%">${Math.round(d.pct)}%</b><span class="avg" style="--w:${100 * D.dhakaAll / max}%"></span>`);
+  }).join("");
+})();
+
+(function rateBars() {
+  const max = D.rateList[0].rate * 1.1;
+  $("rateBars").innerHTML = D.rateList.map(u => {
+    const w = 100 * u.rate / max;
+    return `<div class="${u.ref ? "ref" : ""}">${esc(u.name)}</div><div class="t"><i style="width:${w}%;--c:${u.ref ? "#8a8c83" : "var(--wine)"}"></i><b style="--w:${w}%">${u.rate.toFixed(1)}</b></div>`;
+  }).join("");
+})();
+
+(function clock() {
+  const short = { Morning: "Morn.", Noon: "Noon", Afternoon: "Aft.", Evening: "Eve.", Night: "Night" };
+  let h = "<div></div>" + D.clock.parts.map(p => `<div class="h"><span class="full">${p}</span><span class="short">${short[p]}</span></div>`).join("");
+  for (const r of D.clock.rows) {
+    h += `<div class="r">${esc(r.name)}</div>` + r.v.map(v => {
+      const a = Math.min(v / 66, 1), light = a > .55;
+      return `<div class="c" style="background:rgba(163,42,85,${(.05 + .95 * a).toFixed(2)});color:${light ? "#fff" : "#15191a"}">${v}</div>`;
+    }).join("");
+  }
+  $("clock").innerHTML = h;
+})();
+
+(function months() {
+  const max = Math.max(...D.months.map(m => m.n));
+  $("months").innerHTML = D.months.map((m, i) => {
+    const hi = i >= 10;
+    return `<div class="${hi ? "hi" : ""}" data-tip="${m.name}: ${fmt(m.n)} incidents"><b>${m.n}</b><i style="height:${72 * m.n / max}%"></i><span>${m.name}</span></div>`;
+  }).join("");
+  const wmax = Math.max(...D.week.map(m => m.n)) * 1.18;
+  $("week").innerHTML = D.week.map(d => {
+    const w = 100 * d.n / wmax;
+    return `<div>${d.name.slice(0, 3)}</div><div class="t"><i style="width:${w}%;--c:#8a8c83"></i><b style="--w:${w}%">${d.n}</b></div>`;
+  }).join("");
+})();
+
+$("stabTable").innerHTML = "<tr><th>Hotspot</th><th>15 km</th><th>20 km</th><th>30 km</th></tr>" +
+  D.stability.filter(r => Object.keys(r.v).length > 1 || r.v["20"] || r.v["15"] >= 50).map(r =>
+    `<tr class="${r.major ? "major" : ""}"><td>${esc(r.name === "Dhaka" ? "Greater Dhaka" : r.name)}</td>` +
+    ["15", "20", "30"].map(b => r.v[b] ? `<td>${fmt(r.v[b])}</td>` : '<td class="off">–</td>').join("") + "</tr>").join("");
+
+/* Scatter drawn on one log scale per axis */
+(function scatter() {
+  const narrow = innerWidth <= 800, W = narrow ? 520 : 960, H = narrow ? 430 : 460, L = 58, R = 46, T = 14, B = 46;
+  const xs = D.scatter.map(u => Math.log10(u.d)), ys = D.scatter.map(u => Math.log10(u.r));
+  const x0 = Math.floor(Math.min(...xs) * 2) / 2, x1 = Math.ceil(Math.max(...xs)), y0 = Math.floor(Math.min(...ys)), y1 = Math.ceil(Math.max(...ys));
+  const X = v => L + (v - x0) / (x1 - x0) * (W - L - R), Y = v => H - B - (v - y0) / (y1 - y0) * (H - T - B);
+  let s = `<svg class="scatter" viewBox="0 0 ${W} ${H}" role="img" aria-label="Scatter chart of population density against incident rate showing no clear relationship">`;
+  for (let e = Math.ceil(x0); e <= x1; e++) {
+    s += `<line x1="${X(e)}" x2="${X(e)}" y1="${T}" y2="${H - B}" stroke="#d4d5cc"/><text x="${X(e)}" y="${H - B + 20}" text-anchor="middle" font-size="15" fill="#555b57">${fmt(10 ** e)}</text>`;
+  }
+  for (let e = y0; e <= y1; e++) {
+    s += `<line x1="${L}" x2="${W - R}" y1="${Y(e)}" y2="${Y(e)}" stroke="#d4d5cc"/><text x="${L - 8}" y="${Y(e) + 5}" text-anchor="end" font-size="15" fill="#555b57">${10 ** e < 1 ? (10 ** e).toFixed(1) : 10 ** e}</text>`;
+  }
+  s += `<text x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle" font-size="15" fill="#15191a">People per square km</text>`;
+  s += `<text transform="translate(15 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle" font-size="15" fill="#15191a">Incidents per 100,000 residents</text>`;
+  const named = new Set(["Dhaka metro", "Chattogram metro", "Sylhet Sadar", "Savar"]);
+  const ordered = [...D.scatter].sort((a, b) => named.has(a.l) - named.has(b.l));
+  for (const u of ordered) {
+    const on = named.has(u.l);
+    s += `<circle cx="${X(Math.log10(u.d)).toFixed(1)}" cy="${Y(Math.log10(u.r)).toFixed(1)}" r="${on ? 6 : narrow ? 3.2 : 4.5}" fill="${on ? "#a32a55" : "#7b817c"}" fill-opacity="${on ? 1 : .42}" stroke="#f3f3ee" stroke-width="1" data-tip="${esc(u.l)}: ${u.r.toFixed(1)} per 100,000, ${fmt(u.d)} people per sq km, ${u.n} incidents"/>`;
+  }
+  for (const u of D.scatter.filter(v => named.has(v.l))) {
+    const px = X(Math.log10(u.d)), py = Y(Math.log10(u.r)), left = u.l.endsWith("metro");
+    const lift = u.l === "Chattogram metro" ? -14 : u.l === "Dhaka metro" ? 16 : 0;
+    s += `<text x="${px + (left ? -4 : 11)}" y="${py + 5 + lift}" text-anchor="${left ? "end" : "start"}" font-size="15" font-weight="600" fill="#15191a" pointer-events="none">${esc(u.l)}</text>`;
+  }
+  $("scatter").innerHTML = s + "</svg>";
+})();
+
+/* One small map per crime. Grey dots draw the country, since every location appears on each map. */
+(function dotmaps() {
+  const CAP = {
+    robbery: "The most concentrated crime. Greater Dhaka is its only major hotspot.",
+    bodyfound: "Clusters tightly around the two largest cities, Greater Dhaka and Chattogram.",
+    rape: "Jashore joins Greater Dhaka and Chattogram as a major hotspot at this radius.",
+    kidnap: "Centred on Greater Dhaka, with a smaller regional signal around Chattogram.",
+    assault: "Campuses stand out: {{uni_assault}} reports ({{uni_assault_pct}}%) name a university, against {{uni_other_pct}}% for other crimes. Press attention may play a part.",
+    murder: "The most spread out. Mymensingh joins Greater Dhaka and Chattogram as a major hotspot.",
+  };
+  const K = 62, COS = Math.cos(23.7 * Math.PI / 180), W = 300, H = 400;
+  const PX = lon => 10 + (lon - 88) * COS * K, PY = lat => 8 + (26.7 - lat) * K;
+  const base = D.sites.features.map(f => `M${PX(f.geometry.coordinates[0]).toFixed(1)} ${PY(f.geometry.coordinates[1]).toFixed(1)}h0`).join("");
+  $("dotmaps").innerHTML = D.crimeMaps.map(c => {
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map of ${esc(c.name)} reports across Bangladesh"><path d="${base}" stroke="#c9cac1" stroke-width="2" stroke-linecap="round" fill="none"/>`;
+    for (const h of c.hot) {
+      const pts = h.ring.map(p => PX(p[0]).toFixed(1) + "," + PY(p[1]).toFixed(1)).join(" ");
+      s += `<polygon points="${pts}" fill="none" stroke="#15191a" stroke-width="1.3"${h.tier === "major" ? "" : ' stroke-dasharray="3 2.5"'} data-tip="${esc(h.name)}: ${fmt(h.n)} incidents, ${h.tier} hotspot"/>`;
+    }
+    for (const [lon, lat, n, name] of [...c.sites].sort((a, b) => b[2] - a[2])) {
+      s += `<circle cx="${PX(lon).toFixed(1)}" cy="${PY(lat).toFixed(1)}" r="${Math.max(1.3, .62 * Math.sqrt(n)).toFixed(1)}" fill="#a32a55" fill-opacity=".82" stroke="#f3f3ee" stroke-width=".4" data-tip="${esc(name)}: ${n} ${esc(c.name.toLowerCase())}"/>`;
+    }
+    for (const h of c.hot.filter(v => v.tier === "major")) {
+      const xs = h.ring.map(p => PX(p[0])), ys = h.ring.map(p => PY(p[1]));
+      const right = Math.max(...xs), left = Math.min(...xs), mid = (Math.min(...ys) + Math.max(...ys)) / 2;
+      const onLeft = h.name === "Chattogram";
+      s += `<text class="lbl" x="${onLeft ? left - 4 : right + 4}" y="${mid + 4}" text-anchor="${onLeft ? "end" : "start"}" font-size="11.5" font-weight="600" fill="#15191a" paint-order="stroke" stroke="#f3f3ee" stroke-width="3" pointer-events="none">${esc(h.name)} ${fmt(h.n)}</text>`;
+    }
+    return `<div class="dotmap"><h3>${esc(c.name)}</h3><div class="cnt">${fmt(c.n)} reports · ${c.dhakaPct}% in Greater Dhaka</div>${s}</svg><p>${esc(CAP[c.key])}</p></div>`;
+  }).join("");
+})();
+
+/* Division against the national mix, on a two-hue scale with a neutral midpoint */
+(function finger() {
+  const SHORT = { "Body found": "Body" };
+  let h = "<div></div>" + D.finger.cols.map(c => `<div class="h">${esc(SHORT[c] || c)}</div>`).join("");
+  for (const r of D.finger.rows) {
+    h += `<div class="r">${esc(r.name)}</div>` + r.v.map((v, i) => {
+      const tip = `data-tip="${esc(r.name)}, ${esc(D.finger.cols[i].toLowerCase())}: ${v.n} reports, ${v.r.toFixed(2)} times the national share"`;
+      if (!v.sig) return `<div class="c" ${tip}>${v.r.toFixed(1)}×</div>`;
+      const a = Math.min(Math.abs(Math.log(v.r)) / Math.log(2), 1), hi = v.r > 1, strong = a > .5;
+      const bg = hi ? `rgba(163,42,85,${(.3 + .7 * a).toFixed(2)})` : `rgba(32,104,138,${(.3 + .7 * a).toFixed(2)})`;
+      return `<div class="c" style="background:${bg};color:${strong ? "#fff" : "#15191a"}" ${tip}>${v.r.toFixed(1)}×</div>`;
+    }).join("");
+  }
+  $("finger").innerHTML = h;
+})();
+
+/* Tooltip for anything with data-tip */
+const tip = $("tip");
+document.addEventListener("mousemove", e => {
+  const el = e.target.closest ? e.target.closest("[data-tip]") : null;
+  if (!el) { tip.hidden = true; return; }
+  tip.textContent = el.dataset.tip;
+  tip.hidden = false;
+  const r = tip.getBoundingClientRect();
+  tip.style.left = Math.max(8, Math.min(e.clientX + 14, innerWidth - r.width - 8)) + "px";
+  tip.style.top = Math.max(8, e.clientY - r.height - 12) + "px";
+});
+
+$("exploreCover").onclick = () => {
+  const f = document.createElement("iframe");
+  f.src = "map.html"; f.title = "Interactive crime hotspot map";
+  $("exploreBox").replaceChildren(f);
+};
+
+/* ---------- map story ---------- */
+const BD = [[88.0, 20.6], [92.7, 26.7]];
+const HS = Object.fromEntries(D.hotspots.map(h => [h.name, h]));
+const fc = features => ({ type: "FeatureCollection", features });
+const padding = (name = "country") => {
+  if (innerWidth > 800) return { top: 40, bottom: 40, left: Math.min(520, innerWidth * .42), right: 50 };
+  // On phones the map fits into whatever the current text card leaves free.
+  if (name === "country") return { top: Math.min(document.querySelector(".hero-in").offsetHeight + 30, innerHeight * .6), bottom: 24, left: 16, right: 16 };
+  const card = document.querySelector(`[data-scene=${name}] .card`);
+  return { top: 24, bottom: Math.round(Math.min(card.offsetHeight + 50, innerHeight * .72)), left: 16, right: name.startsWith("regions") ? 120 : 16 };
+};
+const unionBox = hs => [[Math.min(...hs.map(h => h.bbox[0][0])), Math.min(...hs.map(h => h.bbox[0][1]))], [Math.max(...hs.map(h => h.bbox[1][0])), Math.max(...hs.map(h => h.bbox[1][1]))]];
+const labelsOf = h => h.top.slice(0, 4);
+
+const SCENES = {
+  country: { box: BD, hot: [], draw: false, labels: [] },
+  countryHot: { box: BD, hot: D.hotspots.map(h => h.name), draw: false, labels: D.hotspots.map(h => ({ name: h.name === "Dhaka" ? "Greater Dhaka" : h.name, n: fmt(h.n), lon: h.bbox[1][0], lat: (h.bbox[0][1] + h.bbox[1][1]) / 2, side: true })) },
+  dhaka: { box: HS.Dhaka.bbox, hot: ["Dhaka"], draw: true, labels: labelsOf(HS.Dhaka) },
+  dhakaCity: { box: [[90.2, 23.62], [90.6, 23.98]], maxZoom: 11, hot: ["Dhaka"], draw: false, labels: D.cityLabels },
+  ctg: { box: HS.Chattogram.bbox, hot: ["Chattogram"], draw: true, labels: HS.Chattogram.top.filter(l => l.name !== "Chittagong University").slice(0, 3) },
+  regions: { box: unionBox([HS.Jashore, HS.Mymensingh]), hot: ["Jashore", "Mymensingh"], draw: true, labels: [labelsOf(HS.Jashore)[0], labelsOf(HS.Mymensingh)[0]], pad: { top: 70, right: 190 } },
+  regionsTable: { box: unionBox([HS.Jashore, HS.Mymensingh]), hot: ["Jashore", "Mymensingh"], draw: false, labels: [labelsOf(HS.Jashore)[0], labelsOf(HS.Mymensingh)[0]], pad: { top: 70, right: 190 } },
+  rates: { box: BD, hot: [], draw: false, labels: D.rateLabels, rates: true },
+};
+
+let map, ready = false, current = null, pending = "country", drawToken = 0, markers = [];
+const showFilter = (on, f) => { if (ready) map.setFilter(on, f); };
+
+function setHot(names, draw) {
+  const token = ++drawToken;
+  const hs = D.hotspots.filter(h => names.includes(h.name));
+  const poly = h => ({ type: "Feature", properties: { tier: h.tier }, geometry: { type: "Polygon", coordinates: [h.ring] } });
+  const line = (h, k) => ({ type: "Feature", properties: { tier: h.tier }, geometry: { type: "LineString", coordinates: h.ring.slice(0, Math.max(2, k)) } });
+  if (!draw || REDUCE) {
+    map.getSource("hotLine").setData(fc(hs.map(h => line(h, h.ring.length))));
+    map.getSource("hotFill").setData(fc(hs.map(poly)));
+    return;
+  }
+  map.getSource("hotFill").setData(fc([]));
+  map.getSource("hotLine").setData(fc([]));
+  const t0 = performance.now(), dur = 1500, delay = 900;
+  const finish = () => {
+    if (token !== drawToken) return;
+    map.getSource("hotLine").setData(fc(hs.map(h => line(h, h.ring.length))));
+    map.getSource("hotFill").setData(fc(hs.map(poly)));
+  };
+  const tick = now => {
+    if (token !== drawToken) return;
+    const t = (now - t0 - delay) / dur;
+    if (t >= 1) return finish();
+    if (t > 0) map.getSource("hotLine").setData(fc(hs.map(h => line(h, Math.floor(t * h.ring.length)))));
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  setTimeout(finish, delay + dur + 400);    // a hidden tab pauses animation frames, so the outline still lands
+}
+
+function setLabels(list) {
+  markers.forEach(m => m.remove());
+  markers = list.map(l => {
+    const el = document.createElement("div");
+    el.className = "mlabel";
+    el.innerHTML = `${esc(l.name)}<b>${esc(String(l.n))}</b>`;
+    return new maplibregl.Marker({ element: el, anchor: "left", offset: l.side ? [10, 0] : [9, 0] }).setLngLat([l.lon, l.lat]).addTo(map);
+  });
+}
+
+function scene(name) {
+  if (!ready) { pending = name; return; }
+  if (name === current) return;
+  current = name;
+  const s = SCENES[name], duration = REDUCE ? 0 : 1800;
+  map.fitBounds(s.box, { padding: { ...padding(name), ...(innerWidth > 800 ? s.pad : {}) }, duration, maxZoom: s.maxZoom || 10 });
+  setHot(s.hot, s.draw);
+  setLabels(s.labels);
+  map.setPaintProperty("dots", "circle-opacity", s.rates ? 0 : .9);
+  map.setPaintProperty("dots", "circle-stroke-opacity", s.rates ? 0 : .8);
+  map.setPaintProperty("glow", "heatmap-opacity", s.rates ? .25 : .75);
+  map.setPaintProperty("rateDots", "circle-opacity", s.rates ? .92 : 0);
+}
+
+const DOT_R = k => ["max", 1.6, ["*", k, ["sqrt", ["get", "n"]]]];
+try {
+  map = new maplibregl.Map({
+    container: "map", style: "https://tiles.openfreemap.org/styles/dark", bounds: BD,
+    fitBoundsOptions: { padding: padding() }, interactive: false, attributionControl: { compact: true },
+  });
+  map.on("load", () => {
+    map.addSource("sites", { type: "geojson", data: D.sites });
+    map.addSource("rates", { type: "geojson", data: D.rates });
+    map.addSource("hotFill", { type: "geojson", data: fc([]) });
+    map.addSource("hotLine", { type: "geojson", data: fc([]) });
+    const col = ["match", ["get", "tier"], "major", "#ffc145", "#f2743b"];
+    map.addLayer({ id: "glow", type: "heatmap", source: "sites", paint: {
+      "heatmap-weight": ["interpolate", ["linear"], ["sqrt", ["get", "n"]], 1, .12, 15, 1],
+      "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 6, 18, 10, 46],
+      "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 6, .75, 10, 1.1],
+      "heatmap-opacity": .75, "heatmap-opacity-transition": { duration: 900 },
+      "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(59,31,107,0)", .15, "rgba(59,31,107,.55)", .45, "#b5345c", .75, "#f2743b", 1, "#ffd166"],
+    }});
+    map.addLayer({ id: "hotFillL", type: "fill", source: "hotFill", paint: { "fill-color": col, "fill-opacity": .08 } });
+    map.addLayer({ id: "hotLineL", type: "line", source: "hotLine", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": col, "line-width": 2 } });
+    map.addLayer({ id: "dots", type: "circle", source: "sites", paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, DOT_R(.32), 8, DOT_R(.55), 11, DOT_R(1.2)],
+      "circle-color": ["step", ["get", "n"], "#c9527e", 10, "#f2743b", 40, "#ffd166"],
+      "circle-opacity": .9, "circle-opacity-transition": { duration: 900 },
+      "circle-stroke-color": "#0b0d0c", "circle-stroke-width": .6, "circle-stroke-opacity": .8, "circle-stroke-opacity-transition": { duration: 900 },
+    }});
+    map.addLayer({ id: "rateDots", type: "circle", source: "rates", paint: {
+      "circle-radius": ["*", 1.75, ["sqrt", ["get", "rate"]]],
+      "circle-color": ["step", ["get", "rate"], "#c9527e", 10, "#f2743b", 18, "#ffd166"],
+      "circle-opacity": 0, "circle-opacity-transition": { duration: 900 },
+    }});
+    ready = true;
+
+    // Dots arrive across the country once, then the story takes over.
+    if (!REDUCE && scrollY < innerHeight / 2) {
+      const count = D.sites.features.length, t0 = performance.now();
+      const end = () => map.setFilter("dots", null);
+      const grow = now => {
+        const k = Math.floor((now - t0) / 2200 * count);
+        if (k >= count) return end();
+        map.setFilter("dots", ["<=", ["get", "o"], k]);
+        requestAnimationFrame(grow);
+      };
+      requestAnimationFrame(grow);
+      setTimeout(end, 3200);
+    }
+    scene(pending);
+  });
+  map.on("error", e => { if (!ready) console.warn("Basemap", e.error && e.error.message); });
+} catch (err) {
+  $("stage").insertAdjacentHTML("beforeend", '<p id="mapError">The map needs WebGL and an internet connection. The story and charts still work.</p>');
+}
+
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) scene(e.target.dataset.scene); });
+}, { rootMargin: "-50% 0px -50% 0px" });
+document.querySelectorAll("[data-scene]").forEach(el => io.observe(el));
+addEventListener("resize", () => { if (ready && current) { const c = current; current = null; scene(c); } });
+</script>
+</body>
+</html>
